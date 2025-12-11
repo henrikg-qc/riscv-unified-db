@@ -411,15 +411,22 @@ namespace :test do
 
   task riscv_tests: ["build_riscv_tests", "build:iss"] do
     configs_name, build_name = configs_build_name
-    rv32uiTests = ["simple", "add", "addi", "and",
+    # Target Environment Name
+    # p	 - virtual memory is disabled, only core 0 boots up
+    # pm - virtual memory is disabled, all cores boot up
+    # pt - virtual memory is disabled, timer interrupt fires every 100 cycles
+    # v	virtual memory is enabled
+    rv32uiTests = ["ui", ["p", "v"],
+      ["simple", "add", "addi", "and",
       "andi", "auipc", "beq", "bge", "bgeu", "blt",
       "bltu", "bne", "fence_i", "jal", "jalr",
       "lb", "lbu", "lh", "lhu", "lw", "ld_st",
       "lui", "ma_data", "or", "ori", "sb", "sh",
       "sw", "st_ld", "sll", "slli", "slt", "slti",
       "sltiu", "sltu", "sra", "srai", "srl",
-      "srli", "sub", "xor", "xori"]
-    rv64uiTests = ["add", "addi", "addiw", "addw",
+      "srli", "sub", "xor", "xori"]]
+    rv64uiTests = ["ui",["p", "v"],
+      ["add", "addi", "addiw", "addw",
       "and", "andi",
       "auipc",
       "beq", "bge", "bgeu", "blt", "bltu", "bne",
@@ -436,45 +443,39 @@ namespace :test do
       "sra", "srai", "sraiw", "sraw",
       "srl", "srli", "srliw", "srlw",
       "sub", "subw",
-      "xor", "xori"]
+      "xor", "xori"]]
 
-    rv32umTests = [ "div", "divu",
+    rv32umTests = ["um", ["p", "v"],
+      [ "div", "divu",
       "mul", "mulh", "mulhsu", "mulhu",
-      "rem", "remu" ]
-    rv64umTests = ["div", "divu", "divuw", "divw",
+      "rem", "remu" ]]
+    rv64umTests = ["um", ["p", "v"],
+      ["div", "divu", "divuw", "divw",
       "mul", "mulh", "mulhsu", "mulhu", "mulw",
-      "rem", "remu", "remuw", "remw"]
+      "rem", "remu", "remuw", "remw"]]
 
     # compressed tests same for rv32 as rv64
-    ucTests = [ "rvc" ]
+    ucTests = ["uc",["p", "v"],
+      [ "rvc" ]]
 
-    rv32siTests = ["csr", "dirty", "ma_fetch", "scall", "sbreak"]
-    rv64siTests = ["csr", "dirty", "icache-alias", "ma_fetch", "scall", "sbreak"]
+    rv32siTests = ["si", ["p"],
+      ["csr", "dirty", "ma_fetch", "scall", "sbreak"]]
+    rv64siTests = ["si", ["p"],
+      ["csr", "dirty", "icache-alias", "ma_fetch", "scall", "sbreak"]]
+
 
     if configs_name[0] == "rv64"
-      uiTests = rv64uiTests
-      umTests = rv64umTests
-      siTests = rv64siTests
+      rvTests = [rv64uiTests , rv64umTests, ucTests, rv64siTests]
     else
-      uiTests = rv32uiTests
-      umTests = rv32umTests
-      siTests = rv32siTests
+      rvTests = [rv32uiTests , rv32umTests, ucTests, rv32siTests]
     end
 
-    uiTests.each do |t|
-      sh "#{CPP_HART_GEN_DST}/#{build_name}/build/iss -m #{configs_name[0]} -c #{$root}/cfgs/#{configs_name[0]}-riscv-tests.yaml ext/riscv-tests/isa/#{configs_name[0]}ui-p-#{t}"
-    end
-
-    umTests.each do |t|
-      sh "#{CPP_HART_GEN_DST}/#{build_name}/build/iss -m #{configs_name[0]} -c #{$root}/cfgs/#{configs_name[0]}-riscv-tests.yaml ext/riscv-tests/isa/#{configs_name[0]}um-p-#{t}"
-    end
-
-    ucTests.each do |t|
-      sh "#{CPP_HART_GEN_DST}/#{build_name}/build/iss -m #{configs_name[0]} -c #{$root}/cfgs/#{configs_name[0]}-riscv-tests.yaml ext/riscv-tests/isa/#{configs_name[0]}uc-p-#{t}"
-    end
-
-    siTests.each do |t|
-      sh "#{CPP_HART_GEN_DST}/#{build_name}/build/iss -m #{configs_name[0]} -c #{$root}/cfgs/#{configs_name[0]}-riscv-tests.yaml ext/riscv-tests/isa/#{configs_name[0]}si-p-#{t}"
+    rvTests.each do |rvt|
+      rvt[1].each do |tgt|
+        rvt[2].each do |t|
+          sh "#{CPP_HART_GEN_DST}/#{build_name}/build/iss -m #{configs_name[0]} -c #{$root}/cfgs/#{configs_name[0]}-riscv-tests.yaml ext/riscv-tests/isa/#{configs_name[0]}#{rvt[0]}-#{tgt}-#{t}"
+        end
+      end
     end
   end
 end
