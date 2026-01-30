@@ -392,7 +392,7 @@ end
 task checkout_riscv_tests: "#{$root}/ext/riscv-tests/env/LICENSE"
 
 task build_riscv_tests: "checkout_riscv_tests" do
-  configs_name,build_name = configs_build_name
+  configs_name, build_name = configs_build_name
 
   Dir.chdir "#{$root}/tests/isa" do
     if configs_name[0] == "rv32"
