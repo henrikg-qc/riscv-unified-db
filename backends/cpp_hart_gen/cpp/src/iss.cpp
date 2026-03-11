@@ -67,6 +67,7 @@ public:
 private:
   int CreateMemoryMap(std::filesystem::path memMapPath,
                       std::filesystem::path elfPath = "");
+  void SetInitState(Options& opts);
   virtual int OnExternalHalt();
   virtual int OnReadGPR(REGISTERFILE& registerFile) override;
   virtual int OnWriteGPR(REGISTERFILE& registerFile) override;
@@ -76,11 +77,12 @@ private:
   virtual int OnWriteSingleRegister(int reg, uint64_t& value) override;
   virtual int OnSingleStep(uint64_t uiRangeBegin, uint64_t uiRangeEnd) override;
   virtual int OnContinue(uint64_t uiAddress = -1) override;
+  virtual int OnKill(uint64_t uiProcId = 0) override;
   virtual int OnClearBreakWatchPoint(unsigned char type, uint64_t uiAddress, uint64_t uiKind) override;
   virtual int OnSetBreakWatchPoint(unsigned char type, uint64_t uiAddress, uint64_t uiKind) override;
   virtual int OnNotification(uint64_t uiEvent, void* pData) override;
 
-  enum ISSSTATE
+  enum ISS_STATE
   {
     STATE_HALT,
     STATE_SINGLE_STEP,
@@ -93,7 +95,7 @@ private:
   udb::IssSocModel* m_pSoC;
   udb::HartBase<udb::IssSocModel>* m_pHart;
   udb::AbstractTracer* m_pTracer;
-  ISSSTATE m_state;
+  ISS_STATE m_state;
   std::list<uint64_t> m_breakpointList;
   std::list<udb::MemAccessRange> m_readWatchpointList;
   std::list<udb::MemAccessRange> m_writeWatchpointList;
@@ -237,6 +239,25 @@ InstructionSetSimulator::~InstructionSetSimulator()
   delete m_pSoC;
 }
 
+void InstructionSetSimulator::SetInitState(Options& opts)
+{
+  if(opts.gdbMode)
+  {
+    if(opts.halt)
+    {
+      m_state = STATE_HALT;
+    }
+    else
+    {
+      m_state = STATE_RUN;
+    }
+  }
+  else
+  {
+    m_state = STATE_RUN_N;
+  }
+}
+
 int InstructionSetSimulator::CreateMemoryMap(std::filesystem::path memMapPath,
                                              std::filesystem::path elfPath)
 {
@@ -342,6 +363,7 @@ int InstructionSetSimulator::Run()
   {
     result = m_pHart->exit_code();
   }
+
   return result;
 }
 
@@ -646,4 +668,16 @@ int InstructionSetSimulator::OnExternalHalt()
 {
   m_state = STATE_HALT;
   return Halt(HALT_EXTERNAL, m_pHart->hartid().get(), m_pHart->pc());
+}
+
+int InstructionSetSimulator::OnKill(uint64_t uiProcId)
+{
+  // reload the elf
+  udb::ElfReader elfReader(m_opts.elfFilePath.c_str());
+  auto entryPC = elfReader.loadLoadableSegments(*m_pSoC);
+  // reset the hart
+  m_pHart->reset(entryPC);
+  // set the ISS state
+  SetInitState(m_opts);
+  return 0;
 }
