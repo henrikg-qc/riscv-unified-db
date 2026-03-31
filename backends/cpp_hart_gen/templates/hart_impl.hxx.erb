@@ -114,6 +114,10 @@ namespace udb {
     } catch (const udb::PauseException& e) {
       advance_pc();
       return StopReason::Pause;
+    } catch (const udb::EbreakException& e) {
+      this->Notify(udb::HART_NOTIFICATION_EVENT::EBREAK_EVENT, (void*)m_cur_inst);
+      advance_pc();
+      return StopReason::Ebreak;
     } catch (const udb::UnpredictableBehaviorException& e) {
       advance_pc();
       return StopReason::UnpredictableBehavior;
@@ -205,6 +209,11 @@ namespace udb {
       current_bb->invalidate();
       advance_pc();
       return StopReason::Pause;
+    } catch (const udb::EbreakException& e) {
+      current_bb->invalidate();
+      this->Notify(udb::HART_NOTIFICATION_EVENT::EXECUTE_EVENT, (void*)m_cur_inst);
+      advance_pc();
+      return StopReason::Ebreak;
     } catch (const udb::UnpredictableBehaviorException& e) {
       current_bb->invalidate();
       advance_pc();

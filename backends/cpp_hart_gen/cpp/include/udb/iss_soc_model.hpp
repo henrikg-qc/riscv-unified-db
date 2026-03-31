@@ -13,8 +13,8 @@
 namespace udb {
   enum MEM_NOTIFICATION_EVENT
   {
-    MEMREAD_EVENT = 5,
-    MEMWRITE_EVENT,
+    MEMREAD_EVENT = 6,
+    MEMWRITE_EVENT
   };
 
 
@@ -29,10 +29,24 @@ namespace udb {
         return (this->m_addr == mr.m_addr && this->m_size == mr.m_size);
     }
 
-  private:
+  protected:
     uint64_t m_addr;
     size_t m_size;
   };
+
+  class MemAccess : public MemAccessRange
+  {
+  public:
+    MemAccess(uint64_t addr, size_t size, uint64_t data)
+      : MemAccessRange(addr, size)
+    {m_data = data;}
+
+    uint64_t GetData() {return m_data;}
+  private:
+    uint64_t m_data;
+  };
+
+
 
   class IssSocModel {
     class DenseMemory {
@@ -69,9 +83,7 @@ namespace udb {
       }
 
       void write(uint64_t addr, uint64_t data, size_t bytes) {
-        MemAccessRange memAccessData(addr, bytes);
-        this->Notify(MEMWRITE_EVENT, &memAccessData);
-
+        MemAccess memAccess(addr, bytes, data);
         switch (bytes) {
           case 1:
             m_data[addr - m_offset] = data;
@@ -88,6 +100,7 @@ namespace udb {
           default:
             __builtin_unreachable();
         }
+        this->Notify(MEMWRITE_EVENT, &memAccess);
       }
 
       int memcpy_from_host(uint64_t guest_paddr, const uint8_t *host_ptr,
@@ -151,7 +164,7 @@ namespace udb {
 
    public:
     IssSocModel(uint64_t size, uint64_t base_addr)
-        : m_memory(size, base_addr) {}
+        : m_memory(size, base_addr) { m_pNotifier = nullptr; }
     IssSocModel() = delete;
     ~IssSocModel() = default;
 
@@ -159,6 +172,7 @@ namespace udb {
       //Single sink limitation for notifications
       //Furure applications may require list/vector of NotificationHandlers
       m_memory.attach_notifier(n);
+      m_pNotifier = n;
     }
     uint64_t read_hpm_counter(uint64_t n) { return 0; }
     uint64_t read_mcycle() { return 0; }
@@ -169,7 +183,7 @@ namespace udb {
     void eei_ecall_from_s() {}
     void eei_ecall_from_u() {}
     void eei_ecall_from_vs() {}
-    void eei_ebreak() {}
+    void eei_ebreak() { Notify(EBREAK_EVENT, nullptr);}
     void memory_model_acquire() {}
     void memory_model_release() {}
     void assert(uint8_t test, const char *message) {}
@@ -377,6 +391,15 @@ namespace udb {
 
    private:
     DenseMemory m_memory;
+
+    NotificationHandler* m_pNotifier;
+
+    inline int Notify(uint64_t uiEvent, void* pData) {
+      if(m_pNotifier) {
+        return m_pNotifier->Notify(uiEvent, pData);
+      }
+      return 0;
+    }
   };
 
   static_assert(SocModel<IssSocModel>,

@@ -29,18 +29,6 @@
 #endif
 
 namespace udb {
-  // base class for tracers; defines the tracepoints
-  class AbstractTracer {
-   public:
-    AbstractTracer() = default;
-    virtual ~AbstractTracer() = default;
-
-    virtual void trace_exception() {}
-
-    virtual void trace_mem_read_phys(uint64_t paddr, unsigned len) {}
-    virtual void trace_mem_write_phys(uint64_t paddr, unsigned len,
-                                      uint64_t data) {}
-  };
 
   class InstBase;
 
@@ -55,7 +43,8 @@ namespace udb {
     FETCH_EVENT,
     DECODE_EVENT,
     PREEXECUTE_EVENT,
-    EXECUTE_EVENT
+    EXECUTE_EVENT,
+    EBREAK_EVENT
   };
 
   template <SocModel SocType>
@@ -65,7 +54,6 @@ namespace udb {
         : m_hart_id(hart_id),
           m_soc(soc),
           m_cfg(cfg),
-          m_tracer(nullptr),
           m_exit_requested(false),
           m_num_inst_exec(0),
           m_pNotifier(nullptr) {}
@@ -75,14 +63,9 @@ namespace udb {
       m_num_inst_exec = 0;
     }
 
-    void attach_tracer(AbstractTracer* t) {
-      udb_assert(m_tracer == nullptr, "m_tracer NULL ptr");
-      m_tracer = t;
-    }
-
     void attach_notifier(NotificationHandler* n) {
       //Single sink limitation for notifications
-      //Furure applications may require list/vector of NotificationHandlers
+      //Future applications may require list/vector of NotificationHandlers
       m_pNotifier = n;
     }
 
@@ -142,15 +125,15 @@ namespace udb {
     // }
 
     [[noreturn]] void abort_current_instruction() {
-      if (m_tracer != nullptr) {
-        m_tracer->trace_exception();
-      }
+      //TODO: Notify Exception
+      //if (m_tracer != nullptr) {
+      //  m_tracer->trace_exception();
+      //}
       throw AbortInstruction();
     }
 
     void wfi() {
-      //Do nothing for now
-      //throw WfiException();
+      throw WfiException();
     }
 
     void wrs_nto() {
@@ -162,9 +145,10 @@ namespace udb {
     }
 
     void pause() {
-      //Do nothing for now
-      //throw PauseException();
+      throw PauseException();
     }
+
+
 
     // SoC functions
     PossiblyUnknownBits<64> read_hpm_counter(const PossiblyUnknownBits<64>& counternum) {
@@ -180,14 +164,20 @@ namespace udb {
     void eei_ecall_from_s() { m_soc.eei_ecall_from_s(); }
     void eei_ecall_from_u() { m_soc.eei_ecall_from_u(); }
     void eei_ecall_from_vs() { m_soc.eei_ecall_from_vs(); }
-    void eei_ebreak() { m_soc.eei_ebreak(); }
+    void eei_ebreak() {
+      Notify(udb::HART_NOTIFICATION_EVENT::EBREAK_EVENT, nullptr);
+      m_soc.eei_ebreak();
+    }
     void memory_model_acquire() { m_soc.memory_model_acquire(); }
     void memory_model_release() { m_soc.memory_model_release(); }
     void notify_mode_change(const PrivilegeMode& from,
                             const PrivilegeMode& to) {
       m_soc.notify_mode_change(from, to);
     }
-    void ebreak() { m_soc.ebreak(); }
+    void ebreak() {
+      Notify(udb::HART_NOTIFICATION_EVENT::EBREAK_EVENT, nullptr);
+      m_soc.ebreak();
+    }
     void prefetch_instruction(const PossiblyUnknownBits<64>& paddr) {
       m_soc.prefetch_instruction(paddr.get());
     }
@@ -400,7 +390,6 @@ namespace udb {
     const unsigned m_hart_id;
     SocType& m_soc;
     const Config m_cfg;
-    AbstractTracer* m_tracer;
     NotificationHandler* m_pNotifier;
 
     int m_exit_code;

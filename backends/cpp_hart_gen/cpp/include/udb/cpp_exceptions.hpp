@@ -64,6 +64,12 @@ namespace udb {
     const char* what() const noexcept override { return "PAUSE instruction"; }
   };
 
+  class EbreakException : public std::exception {
+   public:
+    const char* what() const noexcept override { return "EBREAK instruction"; }
+  };
+
+
   class UnpredictableBehaviorException : public std::exception {
    public:
     const char* what() const noexcept override {

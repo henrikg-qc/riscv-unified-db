@@ -15,6 +15,8 @@
 #include "udb/iss_soc_model.hpp"
 #include "udb/GDBServer.hpp"
 #include "udb/NotificationHandler.hpp"
+#include "udb/Tracer.hpp"
+#include "udb/config_validator.hpp"
 
 #define RISCV_REG_GPR_FIRST 0
 #define RISCV_REG_GPR_LAST  0x1f
@@ -68,6 +70,7 @@ private:
   int CreateMemoryMap(std::filesystem::path memMapPath,
                       std::filesystem::path elfPath = "");
   void SetInitState(Options& opts);
+  udb::Tracer* CreateTracer();
   virtual int OnExternalHalt();
   virtual int OnReadGPR(REGISTERFILE& registerFile) override;
   virtual int OnWriteGPR(REGISTERFILE& registerFile) override;
@@ -94,7 +97,7 @@ private:
   MEMORYMAP m_memMap;
   udb::IssSocModel* m_pSoC;
   udb::HartBase<udb::IssSocModel>* m_pHart;
-  udb::AbstractTracer* m_pTracer;
+  udb::Tracer* m_pTracer;
   ISS_STATE m_state;
   std::list<uint64_t> m_breakpointList;
   std::list<udb::MemAccessRange> m_readWatchpointList;
@@ -118,34 +121,6 @@ int ParseCommandLine(int argc, char *argv[], Options &options)
 
   CLI11_PARSE(app, argc, argv);
   return 0;
-}
-
-static const std::pair<uint64_t, uint64_t> get_memory_range(std::filesystem::path memmap, std::filesystem::path elf_file_path) {
-  json regions;
-  uint64_t memsz;
-
-  if(!memmap.empty()) {
-    std::ifstream f(memmap);
-    json data = json::parse(f);
-    regions = data["regions"];
-
-    for (const auto& region : regions) {
-      auto type = region["type"];
-      if (type == "ram") {
-        std::string base = region["base"]["value"];
-        std::string size = region["size"]["value"];
-        return std::make_pair(std::stoul(base, nullptr, 0), std::stoul(size, nullptr, 0));
-      }
-    }
-  }
-
-  udb::ElfReader elf_reader(elf_file_path.c_str());
-  auto range = elf_reader.mem_range();
-  memsz = range.second - range.first;
-  // round up to a page for good measure
-  memsz = (memsz + 0xfff) & ~0xfffull;
-
-  return std::make_pair(range.first, memsz);
 }
 
 int main(int argc, char *argv[])
@@ -197,14 +172,8 @@ InstructionSetSimulator::InstructionSetSimulator(Options& opts) :
 
     if(m_pHart)
     {
-      //Create and attach a tracer
-      m_pTracer = udb::HartFactory::create_tracer<udb::IssSocModel>("riscv-tests",
-        opts.configName,
-        m_pHart);
-      if(m_pTracer)
-      {
-        m_pHart->attach_tracer(m_pTracer);
-      }
+      m_pTracer = CreateTracer();
+
       //Attach notifier to hart and enable hart events we want to be notified for
       m_pHart->attach_notifier(this);
       //Eanble these events to trace instruction execution
@@ -213,28 +182,15 @@ InstructionSetSimulator::InstructionSetSimulator(Options& opts) :
     }
     //Attach notifier to SoC
     m_pSoC->attach_notifier(this);
+    EnableEvent(udb::EBREAK_EVENT);
   }
 
-  if(m_opts.gdbMode)
-  {
-    if(m_opts.halt)
-    {
-      m_state = STATE_HALT;
-    }
-    else
-    {
-      m_state = STATE_RUN;
-    }
-  }
-  else
-  {
-    m_state = STATE_RUN_N;
-  }
+  SetInitState(opts);
 }
 
 InstructionSetSimulator::~InstructionSetSimulator()
 {
-  delete m_pTracer;
+  //delete m_pTracer;
   delete m_pHart;
   delete m_pSoC;
 }
@@ -626,9 +582,24 @@ int InstructionSetSimulator::OnNotification(uint64_t uiEvent, void* pData)
         fmt::print("R= {} {:x}\n", r.to_string(), m_pHart->xreg(r.get_num()));
     }
     break;
+  case udb::EBREAK_EVENT:
+    if(m_opts.gdbMode)
+    {
+      m_state = STATE_HALT;
+      //Send break state to debug host
+      result = Halt(HALT_BREAKPOINT, m_pHart->hartid().get(), m_pHart->pc());
+    }
+    else
+    {
+      result = 0;
+    }
+    break;
   case udb::MEMREAD_EVENT:
     {
+
       udb::MemAccessRange* pMemRange = (udb::MemAccessRange*)pData;
+
+      //Watch points
       for(udb::MemAccessRange m : m_readWatchpointList)
       {
         if((pMemRange->GetAddress() >= m.GetAddress() && (pMemRange->GetAddress() < (m.GetAddress() + m.GetSize()))) ||
@@ -640,15 +611,20 @@ int InstructionSetSimulator::OnNotification(uint64_t uiEvent, void* pData)
           throw udb::AbortPreExecute();
         }
       }
+
+      //Tracer
+
     }
     break;
   case udb::MEMWRITE_EVENT:
     {
-      udb::MemAccessRange* pMemRange =  (udb::MemAccessRange*)pData;
+      udb::MemAccess* pMemAccess =  (udb::MemAccess*)pData;
+
+      //Watch points
       for(udb::MemAccessRange m : m_writeWatchpointList)
       {
-        if((pMemRange->GetAddress() >= m.GetAddress() && (pMemRange->GetAddress() < (m.GetAddress() + m.GetSize()))) ||
-          ((pMemRange->GetAddress() + pMemRange->GetSize()) > m.GetAddress()))
+        if((pMemAccess->GetAddress() >= m.GetAddress() && (pMemAccess->GetAddress() < (m.GetAddress() + m.GetSize()))) ||
+          ((pMemAccess->GetAddress() + pMemAccess->GetSize()) > m.GetAddress()))
         {
           m_state = STATE_HALT;
           //Send break state to debug host
@@ -680,4 +656,27 @@ int InstructionSetSimulator::OnKill(uint64_t uiProcId)
   // set the ISS state
   SetInitState(m_opts);
   return 0;
+}
+
+udb::Tracer* InstructionSetSimulator::CreateTracer()
+{
+  //Create tracer for the run time configuration
+
+  udb::Tracer* pTracer = nullptr;
+
+  auto yaml = YAML::LoadFile(m_opts.configPath.string());
+  json config = udb::ConfigValidator::validate(yaml);
+  json name  = config["name"];
+
+  if(static_cast<std::string>(name) == "rv32-riscv-tests" ||
+    static_cast<std::string>(name) == "rv64-riscv-tests")
+  {
+    pTracer = new udb::RiscvTestsTracer(m_pHart, m_pSoC, m_opts.elfFilePath);
+  }
+  else
+  {
+    pTracer
+  }
+
+  return pTracer;
 }
