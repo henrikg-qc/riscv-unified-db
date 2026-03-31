@@ -675,7 +675,7 @@ udb::Tracer* InstructionSetSimulator::CreateTracer()
   }
   else
   {
-    pTracer
+
   }
 
   return pTracer;
