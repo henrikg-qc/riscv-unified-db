@@ -1,24 +1,14 @@
 #include "udb/NotificationHandler.hpp"
+#include "NotificationHandler.hpp"
 
 NotificationHandler::NotificationHandler(NOTIFYCALLBACK notifyCallback)
 {
   m_notifyCallback = notifyCallback;
-  m_uiEventMask = 0;
   m_bEnable = true;
 }
 
 NotificationHandler::~NotificationHandler()
 {
-}
-
-void NotificationHandler::EnableEvent(uint64_t event)
-{
-  m_uiEventMask |= (1 << event);
-}
-
-void NotificationHandler::DisableEvent(uint64_t event)
-{
-  m_uiEventMask &= ~(1 << event);
 }
 
 void NotificationHandler::EnableNotifications()
@@ -31,12 +21,37 @@ void NotificationHandler::DisableNotifications()
   m_bEnable = false;
 }
 
-int NotificationHandler::Notify(uint64_t uiEvent, void* pData) {
-  if(!m_bEnable || ((1 << uiEvent) & m_uiEventMask) == 0)
+int NotificationHandler::Notify(uint8_t uiModuleId, uint64_t uiEvent, void* pData) {
+  if(!m_bEnable)
     return 0;
 
   if(m_notifyCallback)
-    return m_notifyCallback(*this, uiEvent, pData);
+    return m_notifyCallback(*this, uiModuleId, uiEvent, pData);
   else
-    return OnNotification(uiEvent, pData);
+    return OnNotification(uiModuleId, uiEvent, pData);
+}
+
+NotificationSource::NotificationSource()
+{
+
+}
+
+NotificationSource::~NotificationSource()
+{
+
+}
+
+int NotificationSource::AttachHandler(NotificationHandler* pHandler, uint8_t id)
+{
+  m_handlers.push_back(HandlerId(pHandler, id));
+
+  return 0;
+}
+
+int NotificationSource::Notify(uint64_t uiEvent, void* pData)
+{
+  for(handlerId : m_handlers)
+  {
+    handlerId.m_handler.Notify(handlerId.m_id, uiEvent, pData);
+  }
 }

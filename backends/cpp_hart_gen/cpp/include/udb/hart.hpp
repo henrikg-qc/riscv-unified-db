@@ -48,25 +48,18 @@ namespace udb {
   };
 
   template <SocModel SocType>
-  class HartBase {
+  class HartBase : public NotificationSource {
    public:
     HartBase(unsigned hart_id, SocType& soc, const Config& cfg)
         : m_hart_id(hart_id),
           m_soc(soc),
           m_cfg(cfg),
           m_exit_requested(false),
-          m_num_inst_exec(0),
-          m_pNotifier(nullptr) {}
+          m_num_inst_exec(0) {}
 
     virtual void reset(uint64_t reset_pc) {
       m_exit_requested = 0;
       m_num_inst_exec = 0;
-    }
-
-    void attach_notifier(NotificationHandler* n) {
-      //Single sink limitation for notifications
-      //Future applications may require list/vector of NotificationHandlers
-      m_pNotifier = n;
     }
 
     virtual void set_pc(uint64_t new_pc) = 0;
@@ -390,7 +383,6 @@ namespace udb {
     const unsigned m_hart_id;
     SocType& m_soc;
     const Config m_cfg;
-    NotificationHandler* m_pNotifier;
 
     int m_exit_code;
     std::string m_exit_reason;
@@ -400,13 +392,6 @@ namespace udb {
     // the number of instruction *executed*
     // THIS IS NOT minstret (some executed instructions do not retire)
     uint64_t m_num_inst_exec;
-
-    inline int Notify(uint64_t uiEvent, void* pData) {
-      if(m_pNotifier) {
-        return m_pNotifier->Notify(uiEvent, pData);
-      }
-      return 0;
-    }
   };
 
 }  // namespace udb

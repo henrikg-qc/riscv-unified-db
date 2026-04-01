@@ -15,7 +15,7 @@ namespace udb
 
   }
 
-  int Tracer::OnNotification(uint64_t uiEvent, void* pData)
+  int Tracer::OnNotification(uint8_T uiModuleId, uint64_t uiEvent, void* pData)
   {
     switch(uiEvent)
     {

@@ -48,7 +48,7 @@ namespace udb {
 
 
 
-  class IssSocModel {
+  class IssSocModel : public NotificationSource {
     class DenseMemory {
      public:
       DenseMemory(uint64_t size, uint64_t base_addr) : m_offset(base_addr) {
@@ -156,7 +156,7 @@ namespace udb {
 
       inline int Notify(uint64_t uiEvent, void* pData) {
         if(m_pNotifier) {
-          return m_pNotifier->Notify(uiEvent, pData);
+          return m_pNotifier->Notify(0, uiEvent, pData);
         }
         return 0;
       }
@@ -396,7 +396,7 @@ namespace udb {
 
     inline int Notify(uint64_t uiEvent, void* pData) {
       if(m_pNotifier) {
-        return m_pNotifier->Notify(uiEvent, pData);
+        return m_pNotifier->Notify(0, uiEvent, pData);
       }
       return 0;
     }

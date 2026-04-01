@@ -20,7 +20,7 @@ namespace udb {
     virtual void OnPhysicalMemoryWrite(uint64_t addr, unsigned len, uint64_t data) {}
 
   protected:
-    virtual int OnNotification(uint64_t uiEvent, void* pData) override;
+    virtual int OnNotification(uint8_t uiModuleId, uint64_t uiEvent, void* pData) override;
   };
 
   class RiscvTestsTracer : public udb::Tracer {

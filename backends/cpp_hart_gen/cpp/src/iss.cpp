@@ -56,7 +56,14 @@ typedef struct _MEMORYMAP
   uint64_t size;
 } MEMORYMAP, *PMEMORYMAP;
 
-class InstructionSetSimulator : public GDBServer, public NotificationHandler
+enum ISS_NOTIFY_SOURCE
+{
+  ISS_HART_MODULE = 0,
+  ISS_SOC_MODULE,
+  ISS_MODULE_COUNT
+};
+
+class InstructionSetSimulator : public GDBServer, public NotificationHandler2<ISS_MODULE_COUNT>
 {
 public:
   InstructionSetSimulator();
@@ -71,6 +78,8 @@ private:
                       std::filesystem::path elfPath = "");
   void SetInitState(Options& opts);
   udb::Tracer* CreateTracer();
+  int OnHartNotification(uint64_t uiEvent, void* pData);
+  int OnSoCNotification(uint64_t uiEvent, void* pData);
   virtual int OnExternalHalt();
   virtual int OnReadGPR(REGISTERFILE& registerFile) override;
   virtual int OnWriteGPR(REGISTERFILE& registerFile) override;
@@ -83,7 +92,7 @@ private:
   virtual int OnKill(uint64_t uiProcId = 0) override;
   virtual int OnClearBreakWatchPoint(unsigned char type, uint64_t uiAddress, uint64_t uiKind) override;
   virtual int OnSetBreakWatchPoint(unsigned char type, uint64_t uiAddress, uint64_t uiKind) override;
-  virtual int OnNotification(uint64_t uiEvent, void* pData) override;
+  virtual int OnNotification(uint8_t uiModuleId, uint64_t uiEvent, void* pData) override;
 
   enum ISS_STATE
   {
@@ -174,15 +183,16 @@ InstructionSetSimulator::InstructionSetSimulator(Options& opts) :
     {
       m_pTracer = CreateTracer();
 
-      //Attach notifier to hart and enable hart events we want to be notified for
-      m_pHart->attach_notifier(this);
-      //Eanble these events to trace instruction execution
-      EnableEvent(udb::PREEXECUTE_EVENT);
-      EnableEvent(udb::EXECUTE_EVENT);
+      //Attach notification handler to hart and enable hart events we want to be notified for
+      m_pHart->AttachHandler(this, ISS_HART_MODULE);
+      //TODO: move this to tracer
+      //Enable these events to trace instruction execution
+      //EnableEvent(udb::PREEXECUTE_EVENT);
+      //EnableEvent(udb::EXECUTE_EVENT);
     }
     //Attach notifier to SoC
-    m_pSoC->attach_notifier(this);
-    EnableEvent(udb::EBREAK_EVENT);
+    m_pSoC->AttachHandler(this, ISS_SOC_MODULE);
+    EnableEvent(ISS_SOC_MODULE, udb::EBREAK_EVENT);
   }
 
   SetInitState(opts);
@@ -543,7 +553,25 @@ int InstructionSetSimulator::OnSetBreakWatchPoint(unsigned char type, uint64_t u
   return result;
 }
 
-int InstructionSetSimulator::OnNotification(uint64_t uiEvent, void* pData)
+int InstructionSetSimulator::OnNotification(uint8_t uiModuleId, uint64_t uiEvent, void* pData)
+{
+  int result;
+  switch(uiModuleId)
+  {
+  case ISS_HART_MODULE:
+    result = OnHartNotification(uiEvent, pData);
+    break;
+  case ISS_SOC_MODULE:
+    result = OnSoCNotification(uiEvent, pData);
+    break;
+  default:
+    result = 0;
+    break;
+  }
+  return result;
+}
+
+int InstructionSetSimulator::OnHartNotification(uint64_t uiEvent, void* pData)
 {
   int result = 0;
   switch(uiEvent)
@@ -594,6 +622,18 @@ int InstructionSetSimulator::OnNotification(uint64_t uiEvent, void* pData)
       result = 0;
     }
     break;
+  default:
+    break;
+  }
+
+  return result;
+}
+
+int InstructionSetSimulator::OnSoCNotification(uint64_t uiEvent, void* pData)
+{
+  int result;
+  switch(uiEvent)
+  {
   case udb::MEMREAD_EVENT:
     {
 
@@ -635,6 +675,7 @@ int InstructionSetSimulator::OnNotification(uint64_t uiEvent, void* pData)
     }
     break;
   default:
+    result = 0;
     break;
   }
   return result;
