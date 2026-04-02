@@ -25,17 +25,8 @@ namespace udb {
     {
       auto yaml = YAML::LoadFile(cfg_path.string());
       nlohmann::json json = ConfigValidator::validate(yaml);
-      Config cfg(json["implemented_extensions"], json["params"]);
 
-      <%- cfg_list.each do |config| -%>
-      if (config_name == "<%= config %>") {
-        return new <%= name_of(:hart, config) %>(hart_id, soc, cfg);
-      }
-      <%- end %>
-
-      // bad config name
-      fmt::print("'{}' is not a valid config name\n", config_name);
-      exit(1);
+      return create(config_name, hart_id, json, soc);
     }
 
     template <SocModel SocType>
@@ -43,7 +34,14 @@ namespace udb {
     {
       auto yaml = YAML::Load(cfg_yaml);
       nlohmann::json json = ConfigValidator::validate(yaml);
-      Config cfg(json["implemented_extensions"], json["params"]);
+
+      return create(config_name, hart_id, json, soc);
+    }
+
+    template <SocModel SocType>
+    static HartBase<SocType>* create(const std::string& config_name, uint64_t hart_id, const nlohmann::json& cfg_json, SocType& soc)
+    {
+      Config cfg(cfg_json["implemented_extensions"], cfg_json["params"]);
 
       <%- cfg_list.each do |config| -%>
       if (config_name == "<%= config %>") {

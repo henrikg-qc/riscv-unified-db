@@ -26,16 +26,16 @@ protected:
 };
 
 template<size_t N>
-class NotificationHandler2 : public NotificationHandler
+class NotificationHandlerEx : public NotificationHandler
 {
 public:
-  NotificationHandler2()
+  NotificationHandlerEx() : NotificationHandler(nullptr)
   {
     for(int i = 0 ; i < N ; i++)
       m_uiEventMask[i] = 0;
   }
 
-  ~NotificationHandler2()
+  ~NotificationHandlerEx()
   {
 
   }

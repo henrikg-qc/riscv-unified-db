@@ -15,7 +15,7 @@ enum TRACER_NOTIFY_MODULES
 };
 namespace udb {
   // base class for tracers; defines the tracepoints
-  class Tracer : public NotificationHandler2<TRACE_MODULE_COUNT>
+  class Tracer : public NotificationHandlerEx<TRACE_MODULE_COUNT>
   {
    public:
     Tracer(HartBase<IssSocModel>* pHart, IssSocModel* pSoC);

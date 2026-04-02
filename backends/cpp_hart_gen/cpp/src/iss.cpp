@@ -63,7 +63,7 @@ enum ISS_NOTIFY_SOURCE
   ISS_MODULE_COUNT
 };
 
-class InstructionSetSimulator : public GDBServer, public NotificationHandler2<ISS_MODULE_COUNT>
+class InstructionSetSimulator : public GDBServer, public NotificationHandlerEx<ISS_MODULE_COUNT>
 {
 public:
   InstructionSetSimulator();
@@ -77,7 +77,7 @@ private:
   int CreateMemoryMap(std::filesystem::path memMapPath,
                       std::filesystem::path elfPath = "");
   void SetInitState(Options& opts);
-  udb::Tracer* CreateTracer();
+  udb::Tracer* CreateTracer(json config);
   int OnHartNotification(uint64_t uiEvent, void* pData);
   int OnSoCNotification(uint64_t uiEvent, void* pData);
   virtual int OnExternalHalt();
@@ -169,6 +169,10 @@ InstructionSetSimulator::InstructionSetSimulator()
 InstructionSetSimulator::InstructionSetSimulator(Options& opts) :
   GDBServer(GDB_SUPPORT_BASE, opts.gdbPort, opts.halt), m_opts(opts)
 {
+  //Load and validate the config
+  auto yaml = YAML::LoadFile(m_opts.configPath.string());
+  json config = udb::ConfigValidator::validate(yaml);
+
   CreateMemoryMap(opts.memoryMapPath, opts.elfFilePath);
   m_pSoC = new udb::IssSocModel(m_memMap.size, m_memMap.base);
   if(m_pSoC)
@@ -176,12 +180,12 @@ InstructionSetSimulator::InstructionSetSimulator(Options& opts) :
     //Create Hart with reference to SoC model
     m_pHart = udb::HartFactory::create<udb::IssSocModel>(opts.configName,
       0,
-      opts.configPath,
+      config,
       *m_pSoC);
 
     if(m_pHart)
     {
-      m_pTracer = CreateTracer();
+      m_pTracer = CreateTracer(config);
 
       //Attach notification handler to hart
       m_pHart->AttachHandler(this, ISS_HART_MODULE);
@@ -678,24 +682,20 @@ int InstructionSetSimulator::OnKill(uint64_t uiProcId)
   return 0;
 }
 
-udb::Tracer* InstructionSetSimulator::CreateTracer()
+udb::Tracer* InstructionSetSimulator::CreateTracer(json config)
 {
   //Create tracer for the run time configuration
 
-  udb::Tracer* pTracer = nullptr;
-
-  auto yaml = YAML::LoadFile(m_opts.configPath.string());
-  json config = udb::ConfigValidator::validate(yaml);
-  json name  = config["name"];
-
-  if(static_cast<std::string>(name) == "rv32-riscv-tests" ||
-    static_cast<std::string>(name) == "rv64-riscv-tests")
+  udb::Tracer* pTracer;
+  if(static_cast<std::string>(config["name"]) == "rv32-riscv-tests" ||
+    static_cast<std::string>(config["name"]) == "rv64-riscv-tests")
   {
     pTracer = new udb::RiscvTestsTracer(m_pHart, m_pSoC, m_opts.elfFilePath);
   }
   else
   {
-
+    //generic tracer with instruction trace output
+    pTracer = new udb::Tracer(m_pHart, m_pSoC);
   }
 
   return pTracer;
