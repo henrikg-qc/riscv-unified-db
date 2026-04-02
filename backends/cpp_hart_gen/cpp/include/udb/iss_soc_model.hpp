@@ -13,7 +13,7 @@
 namespace udb {
   enum MEM_NOTIFICATION_EVENT
   {
-    MEMREAD_EVENT = 6,
+    MEMREAD_EVENT = 0,
     MEMWRITE_EVENT
   };
 
@@ -51,18 +51,13 @@ namespace udb {
   class IssSocModel : public NotificationSource {
     class DenseMemory {
      public:
-      DenseMemory(uint64_t size, uint64_t base_addr) : m_offset(base_addr) {
+      DenseMemory(uint64_t size, uint64_t base_addr, NotificationSource* pNotifier) : m_offset(base_addr) {
         m_data.resize(size);
         m_addend = &m_data[0] - base_addr;
-        m_pNotifier = nullptr;
+        m_pNotifier = pNotifier;
       }
       ~DenseMemory() = default;
 
-      void attach_notifier(NotificationHandler* n) {
-        //Single sink limitation for notifications
-        //Future applications may require list/vector of NotificationHandlers
-        m_pNotifier = n;
-      }
       // subclasses only need to override these functions:
       virtual uint64_t read(uint64_t addr, size_t bytes) {
         MemAccessRange memAccessData(addr, bytes);
@@ -110,19 +105,7 @@ namespace udb {
           //out of bounds
           return -1;
         }
-
-        auto host_ptr64 = (const uint64_t *)host_ptr;  // NOLINT
-        while(size >= sizeof(uint64_t)) {
-          write(guest_paddr, *host_ptr64++, sizeof(uint64_t));
-          guest_paddr += sizeof(uint64_t);
-          size -= sizeof(uint64_t);
-        }
-
-        auto host_ptr8 = (const uint8_t *)host_ptr64;  // NOLINT
-        while(size > 0) {
-          write(guest_paddr++, *host_ptr8++, sizeof(uint8_t));
-          size--;
-        }
+        memcpy(&m_data[guest_paddr - m_offset], host_ptr, size);
         return size;
       }
 
@@ -133,18 +116,8 @@ namespace udb {
           //out of bounds
           return -1;
         }
-        auto host_ptr64 = (uint64_t *)host_ptr;  // NOLINT
-        while(size >= sizeof(uint64_t)) {
-          *host_ptr64++ = read(guest_paddr, sizeof(uint64_t));
-          guest_paddr += sizeof(uint64_t);
-          size -= sizeof(uint64_t);
-        }
 
-        auto host_ptr8 = (uint8_t *)host_ptr64;  // NOLINT
-        while(size > 0) {
-          *host_ptr8++ = read(guest_paddr++, sizeof(uint8_t));
-          size--;
-        }
+        memcpy(host_ptr, &m_data[guest_paddr - m_offset], size);
         return size;
       }
 
@@ -152,11 +125,11 @@ namespace udb {
       std::vector<uint8_t> m_data;
       uint64_t m_offset;
       uint8_t *m_addend = nullptr;
-      NotificationHandler* m_pNotifier;
+      NotificationSource* m_pNotifier;
 
       inline int Notify(uint64_t uiEvent, void* pData) {
         if(m_pNotifier) {
-          return m_pNotifier->Notify(0, uiEvent, pData);
+          return m_pNotifier->Notify(uiEvent, pData);
         }
         return 0;
       }
@@ -164,16 +137,10 @@ namespace udb {
 
    public:
     IssSocModel(uint64_t size, uint64_t base_addr)
-        : m_memory(size, base_addr) { m_pNotifier = nullptr; }
+        : m_memory(size, base_addr, this) {}
     IssSocModel() = delete;
     ~IssSocModel() = default;
 
-    void attach_notifier(NotificationHandler* n) {
-      //Single sink limitation for notifications
-      //Furure applications may require list/vector of NotificationHandlers
-      m_memory.attach_notifier(n);
-      m_pNotifier = n;
-    }
     uint64_t read_hpm_counter(uint64_t n) { return 0; }
     uint64_t read_mcycle() { return 0; }
     uint64_t read_mtime() { return 0; }
@@ -392,14 +359,6 @@ namespace udb {
    private:
     DenseMemory m_memory;
 
-    NotificationHandler* m_pNotifier;
-
-    inline int Notify(uint64_t uiEvent, void* pData) {
-      if(m_pNotifier) {
-        return m_pNotifier->Notify(0, uiEvent, pData);
-      }
-      return 0;
-    }
   };
 
   static_assert(SocModel<IssSocModel>,

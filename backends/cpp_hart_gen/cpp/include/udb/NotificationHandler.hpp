@@ -1,6 +1,7 @@
 #pragma once
 #include <stdint.h>
 #include <stddef.h>
+#include <list>
 
 class NotificationHandler;
 typedef int (*NOTIFYCALLBACK)(NotificationHandler& handler, uint8_t uiModuleId, uint64_t uiEvent, void* pData);
@@ -88,5 +89,5 @@ public:
   int Notify(uint64_t uiEvent, void* pData);
 
 protected:
-  std::list<HandlerId> m_handlers;
+  std::list<HandlerId> m_handlerList;
 };

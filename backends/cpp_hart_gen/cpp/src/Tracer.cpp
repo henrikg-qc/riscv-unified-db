@@ -1,13 +1,21 @@
 #include "udb/Tracer.hpp"
 #include "udb/iss_soc_model.hpp"
 #include "udb/elf_reader.hpp"
+#include "udb/inst.hpp"
 
 namespace udb
 {
-  Tracer::Tracer() :
-    NotificationHandler(nullptr)
+  Tracer::Tracer(HartBase<IssSocModel>* pHart, IssSocModel* pSoC)
   {
+    m_pHart = pHart;
+    m_pSoC = pSoC;
 
+    //Enble events for instruction tracing
+    EnableEvent(TRACE_HART_MODULE, udb::PREEXECUTE_EVENT);
+    EnableEvent(TRACE_HART_MODULE, udb::EXECUTE_EVENT);
+
+    //Attach to the Hart
+    m_pHart->AttachHandler(this, TRACE_HART_MODULE);
   }
 
   Tracer::~Tracer()
@@ -15,42 +23,73 @@ namespace udb
 
   }
 
-  int Tracer::OnNotification(uint8_T uiModuleId, uint64_t uiEvent, void* pData)
+  int Tracer::OnNotification(uint8_t uiModuleId, uint64_t uiEvent, void* pData)
   {
-    switch(uiEvent)
+    if(uiModuleId == TRACE_HART_MODULE)
     {
-    case MEMREAD_EVENT:
-      if(pData != nullptr)
+      //Instruction trace
+      switch(uiEvent)
       {
-        MemAccessRange* pMemAccessRange =  (MemAccessRange*)pData;
-        OnPhysicalMemoryRead(pMemAccessRange->GetAddress(), pMemAccessRange->GetSize());
+      case PREEXECUTE_EVENT:
+        {
+          udb::InstBase* pInst = (udb::InstBase*)pData;
+          fmt::print("PC {:x} {}\n", m_pHart->pc(), pInst->disassemble());
+          for(auto r : pInst->srcRegs())
+            fmt::print("R {} {:x}\n", r.to_string(), m_pHart->xreg(r.get_num()));
+        }
+        break;
+      case EXECUTE_EVENT:
+        {
+          udb::InstBase* pInst = (udb::InstBase*)pData;
+          for (auto r : pInst->dstRegs())
+            fmt::print("R= {} {:x}\n", r.to_string(), m_pHart->xreg(r.get_num()));
+        }
+        break;
+      case EXCEPTION_EVENT:
+        OnException();
+      default:
+        break;
       }
-      break;
-    case MEMWRITE_EVENT:
-      if(pData != nullptr)
+    }
+    else if(uiModuleId == TRACE_SOC_MODULE)
+    {
+      //Memory access trace
+      switch(uiEvent)
       {
-        MemAccess* pMemAccess =  (MemAccess*)pData;
-        OnPhysicalMemoryWrite(pMemAccess->GetAddress(), pMemAccess->GetSize(), pMemAccess->GetData());
+      case MEMREAD_EVENT:
+        if(pData != nullptr)
+        {
+          MemAccessRange* pMemAccessRange =  (MemAccessRange*)pData;
+          OnPhysicalMemoryRead(pMemAccessRange->GetAddress(), pMemAccessRange->GetSize());
+        }
+        break;
+      case MEMWRITE_EVENT:
+        if(pData != nullptr)
+        {
+          MemAccess* pMemAccess =  (MemAccess*)pData;
+          OnPhysicalMemoryWrite(pMemAccess->GetAddress(), pMemAccess->GetSize(), pMemAccess->GetData());
+        }
+        break;
+      default:
+        break;
       }
-      break;
-    default:
-      break;
     }
     return 0;
   }
 
   RiscvTestsTracer::RiscvTestsTracer(HartBase<IssSocModel>* pHart, IssSocModel* pSoC, std::string& elfFilePath) :
-    Tracer()
+    Tracer(pHart, pSoC)
   {
     udb::ElfReader elfReader(elfFilePath.c_str());
-    //Is there a "tohost" and/or "fromhost" port (symbol)
+    //Is there a "tohost" and "fromhost" port (symbol)
     if(elfReader.getSym("tohost", &m_toHostAddress))
-      EnableEvent(udb::MEMWRITE_EVENT);
-    if(elfReader.getSym("fromhost", &m_fromHostAddress))
-      EnableEvent(udb::MEMREAD_EVENT);
+    {
+      EnableEvent(TRACE_SOC_MODULE, udb::MEMWRITE_EVENT);
+      if(elfReader.getSym("fromhost", &m_fromHostAddress))
+        EnableEvent(TRACE_SOC_MODULE, udb::MEMREAD_EVENT);
 
-    m_pHart = pHart;
-    m_pSoC = m_pSoC;
+      m_pSoC->AttachHandler(this, TRACE_SOC_MODULE);
+    }
   }
 
   void RiscvTestsTracer::OnPhysicalMemoryWrite(uint64_t addr, unsigned len, uint64_t data)
@@ -70,9 +109,9 @@ namespace udb
           putchar((char)(toHostValue & 0xff));
         }
         else if(data < 2)
-          throw udb::ExitEvent(0); //Pass
+          throw Pass();
         else
-          throw udb::ExitEvent(-1); //fail
+          throw Fail(data >> 1);
       }
   }
 }

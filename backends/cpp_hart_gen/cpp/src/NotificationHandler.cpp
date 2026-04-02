@@ -1,5 +1,4 @@
 #include "udb/NotificationHandler.hpp"
-#include "NotificationHandler.hpp"
 
 NotificationHandler::NotificationHandler(NOTIFYCALLBACK notifyCallback)
 {
@@ -43,15 +42,17 @@ NotificationSource::~NotificationSource()
 
 int NotificationSource::AttachHandler(NotificationHandler* pHandler, uint8_t id)
 {
-  m_handlers.push_back(HandlerId(pHandler, id));
+  m_handlerList.push_back(HandlerId(pHandler, id));
 
   return 0;
 }
 
 int NotificationSource::Notify(uint64_t uiEvent, void* pData)
 {
-  for(handlerId : m_handlers)
+  int result = 0;
+  for(auto iter = m_handlerList.begin() ; iter != m_handlerList.end(); ++iter)
   {
-    handlerId.m_handler.Notify(handlerId.m_id, uiEvent, pData);
+    result = iter->m_pHandler->Notify(iter->m_id, uiEvent, pData);
   }
+  return result;
 }

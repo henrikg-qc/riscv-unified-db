@@ -7,12 +7,18 @@
 #include "hart.hpp"
 #include "iss_soc_model.hpp"
 
+enum TRACER_NOTIFY_MODULES
+{
+  TRACE_HART_MODULE = 0,
+  TRACE_SOC_MODULE,
+  TRACE_MODULE_COUNT
+};
 namespace udb {
   // base class for tracers; defines the tracepoints
-  class Tracer : public NotificationHandler
+  class Tracer : public NotificationHandler2<TRACE_MODULE_COUNT>
   {
    public:
-    Tracer();
+    Tracer(HartBase<IssSocModel>* pHart, IssSocModel* pSoC);
     virtual ~Tracer();
 
     virtual void OnException() {}
@@ -21,7 +27,11 @@ namespace udb {
 
   protected:
     virtual int OnNotification(uint8_t uiModuleId, uint64_t uiEvent, void* pData) override;
+
+    HartBase<IssSocModel>* m_pHart;
+    IssSocModel* m_pSoC;
   };
+
 
   class RiscvTestsTracer : public udb::Tracer {
    public:
@@ -81,9 +91,7 @@ namespace udb {
     }
     */
 
-   private:
-    HartBase<IssSocModel>* m_pHart;
-    IssSocModel* m_pSoC;
+   protected:
     uint64_t m_toHostAddress;
     uint64_t m_fromHostAddress;
   };

@@ -183,16 +183,13 @@ InstructionSetSimulator::InstructionSetSimulator(Options& opts) :
     {
       m_pTracer = CreateTracer();
 
-      //Attach notification handler to hart and enable hart events we want to be notified for
+      //Attach notification handler to hart
       m_pHart->AttachHandler(this, ISS_HART_MODULE);
-      //TODO: move this to tracer
-      //Enable these events to trace instruction execution
-      //EnableEvent(udb::PREEXECUTE_EVENT);
-      //EnableEvent(udb::EXECUTE_EVENT);
+
     }
     //Attach notifier to SoC
     m_pSoC->AttachHandler(this, ISS_SOC_MODULE);
-    EnableEvent(ISS_SOC_MODULE, udb::EBREAK_EVENT);
+    //EnableEvent(ISS_SOC_MODULE, udb::EBREAK_EVENT);
   }
 
   SetInitState(opts);
@@ -200,7 +197,7 @@ InstructionSetSimulator::InstructionSetSimulator(Options& opts) :
 
 InstructionSetSimulator::~InstructionSetSimulator()
 {
-  //delete m_pTracer;
+  delete m_pTracer;
   delete m_pHart;
   delete m_pSoC;
 }
@@ -281,8 +278,7 @@ int InstructionSetSimulator::Run()
     int stopReason;
     if(m_opts.gdbMode)
     {
-
-      //Prevent the debugger commands from
+       //Prevent the debugger commands from
       //generating notifications
       DisableNotifications();
       result = Poll();
@@ -290,7 +286,6 @@ int InstructionSetSimulator::Run()
       if(result < 0)
         break;
     }
-
 
     switch(m_state)
     {
@@ -491,20 +486,20 @@ int InstructionSetSimulator::OnClearBreakWatchPoint(unsigned char type, uint64_t
     // All breakpoints are HW breakpoints
     m_breakpointList.remove(uiAddress);
     if(m_breakpointList.size() == 0)
-        DisableEvent(udb::PREFETCH_EVENT);
+        DisableEvent(ISS_HART_MODULE, udb::PREFETCH_EVENT);
     break;
   case 2:
     // read watch point
     m_readWatchpointList.remove(udb::MemAccessRange(uiAddress, (size_t)uiKind));
     if(m_readWatchpointList.size() == 0)
-        DisableEvent(udb::MEMREAD_EVENT);
+        DisableEvent(ISS_SOC_MODULE, udb::MEMREAD_EVENT);
     break;
 
   case 3:
     // write watch point
     m_writeWatchpointList.remove(udb::MemAccessRange(uiAddress, (size_t)uiKind));
     if(m_writeWatchpointList.size() == 0)
-        DisableEvent(udb::MEMWRITE_EVENT);
+        DisableEvent(ISS_SOC_MODULE, udb::MEMWRITE_EVENT);
     break;
   default:
     result = -1;
@@ -523,7 +518,7 @@ int InstructionSetSimulator::OnSetBreakWatchPoint(unsigned char type, uint64_t u
   case 1:
     {
       if(m_breakpointList.size() == 0)
-        EnableEvent(udb::PREFETCH_EVENT);
+        EnableEvent(ISS_HART_MODULE, udb::PREFETCH_EVENT);
 
       // All breakpoints are HW breakpoints
       auto it = std::find(m_breakpointList.begin(), m_breakpointList.end(), uiAddress);
@@ -536,14 +531,14 @@ int InstructionSetSimulator::OnSetBreakWatchPoint(unsigned char type, uint64_t u
   case 2:
     // set read watch point
     if(m_readWatchpointList.size() == 0)
-      EnableEvent(udb::MEMREAD_EVENT);
+      EnableEvent(ISS_SOC_MODULE, udb::MEMREAD_EVENT);
 
     m_readWatchpointList.push_back(udb::MemAccessRange(uiAddress, (size_t)uiKind));
     break;
   case 3:
     // set write watch point
     if(m_readWatchpointList.size() == 0)
-      EnableEvent(udb::MEMREAD_EVENT);
+      EnableEvent(ISS_SOC_MODULE, udb::MEMREAD_EVENT);
 
     m_writeWatchpointList.push_back(udb::MemAccessRange(uiAddress, (size_t)uiKind));
   default:
@@ -589,27 +584,6 @@ int InstructionSetSimulator::OnHartNotification(uint64_t uiEvent, void* pData)
       }
     }
     break;
-  case udb::FETCH_EVENT:
-    break;
-  case udb::DECODE_EVENT:
-    break;
-  case udb::PREEXECUTE_EVENT:
-    {
-      //TODO: Trace optionally
-      udb::InstBase* pInst = (udb::InstBase*)pData;
-      fmt::print("PC {:x} {}\n", m_pHart->pc(), pInst->disassemble());
-      for(auto r : pInst->srcRegs())
-        fmt::print("R {} {:x}\n", r.to_string(), m_pHart->xreg(r.get_num()));
-    }
-    break;
-  case udb::EXECUTE_EVENT:
-    {
-      //TODO: Trace optionally
-      udb::InstBase* pInst = (udb::InstBase*)pData;
-      for (auto r : pInst->dstRegs())
-        fmt::print("R= {} {:x}\n", r.to_string(), m_pHart->xreg(r.get_num()));
-    }
-    break;
   case udb::EBREAK_EVENT:
     if(m_opts.gdbMode)
     {
@@ -622,6 +596,11 @@ int InstructionSetSimulator::OnHartNotification(uint64_t uiEvent, void* pData)
       result = 0;
     }
     break;
+  //events not handled, should not be enabled
+  case udb::FETCH_EVENT:
+  case udb::DECODE_EVENT:
+  case udb::PREEXECUTE_EVENT:
+  case udb::EXECUTE_EVENT:
   default:
     break;
   }

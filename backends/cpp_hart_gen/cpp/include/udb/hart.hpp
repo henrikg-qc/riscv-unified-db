@@ -44,7 +44,8 @@ namespace udb {
     DECODE_EVENT,
     PREEXECUTE_EVENT,
     EXECUTE_EVENT,
-    EBREAK_EVENT
+    EBREAK_EVENT,
+    EXCEPTION_EVENT
   };
 
   template <SocModel SocType>
@@ -118,10 +119,8 @@ namespace udb {
     // }
 
     [[noreturn]] void abort_current_instruction() {
-      //TODO: Notify Exception
-      //if (m_tracer != nullptr) {
-      //  m_tracer->trace_exception();
-      //}
+      //Notify Exception
+      Notify(EXCEPTION_EVENT, nullptr);
       throw AbortInstruction();
     }
 
