@@ -46,6 +46,11 @@ module Udb
     sig { params(xlen: Integer).void }
     def initialize(xlen)
       @xlen = xlen
+      @to_s = "xlen=#{@xlen}".freeze
+      @to_h = {
+        "xlen" => @xlen
+      }.freeze
+      @hash = to_s.hash
     end
 
     sig { params(cfg_arch: ConfiguredArchitecture).returns(Condition) }
@@ -53,12 +58,12 @@ module Udb
       Condition.new({ "xlen" => @xlen }, cfg_arch)
     end
 
-    sig { override.returns(String) }
+    sig { override.returns(String).checked(:never) }
     def to_s
-      "xlen=#{@xlen}"
+      @to_s
     end
 
-    sig { params(solver: Z3Solver).returns(Z3::BoolExpr) }
+    sig { params(solver: Z3Solver).returns(Z3::BoolExpr).checked(:never) }
     def to_z3(solver)
       solver.xlen == @xlen
     end
@@ -71,9 +76,7 @@ module Udb
 
     sig { returns(T::Hash[String, Integer]) }
     def to_h
-      {
-        "xlen" => @xlen
-      }
+      @to_h
     end
 
     sig { params(cfg_arch: ConfiguredArchitecture).returns(String) }
@@ -93,9 +96,9 @@ module Udb
       @xlen <=> other.xlen
     end
 
-    # hash and eql? must be implemented to use ExtensionTerm as a Hash key
-    sig { override.returns(Integer) }
-    def hash = to_s.hash
+    # hash and eql? must be implemented to use XlenTerm as a Hash key
+    sig { override.returns(Integer).checked(:never) }
+    def hash = @hash
 
     sig {
       override
@@ -179,9 +182,9 @@ module Udb
       Condition.new({ "extension" => { "name" => name, "version" => "#{@op.serialize} #{@version}" } }, cfg_arch)
     end
 
-    sig { override.returns(String) }
+    sig { override.returns(String).checked(:never) }
     def to_s
-      "#{@name}#{@op.serialize}#{@version}"
+      @to_s ||= "#{@name}#{@op.serialize}#{@version}"
     end
 
     sig { returns(String) }
@@ -211,7 +214,7 @@ module Udb
       @requirement_spec ||= RequirementSpec.new("#{@op.serialize} #{@version}")
     end
 
-    sig { params(solver: Z3Solver, cfg_arch: ConfiguredArchitecture).returns(Z3::BoolExpr) }
+    sig { params(solver: Z3Solver, cfg_arch: ConfiguredArchitecture).returns(Z3::BoolExpr).checked(:never) }
     def to_z3(solver, cfg_arch)
       ext = solver.ext_req(name, requirement_spec, cfg_arch)
       ext.term
@@ -280,8 +283,8 @@ module Udb
     end
 
     # hash and eql? must be implemented to use ExtensionTerm as a Hash key
-    sig { override.returns(Integer) }
-    def hash = to_s.hash
+    sig { override.returns(Integer).checked(:never) }
+    def hash = @hash ||= to_s.hash
 
     sig {
       override
@@ -1055,8 +1058,10 @@ module Udb
           cv <=> T.cast(other_param.comparison_value, String)
         elsif cv.is_a?(Array)
           cv <=> T.cast(other_param.comparison_value, T::Array[T.any(String, T::Boolean, Integer)])
-        else
+        elsif cv.is_a?(Integer)
           T.cast(comparison_value, Integer) <=> T.cast(other_param.comparison_value, Integer)
+        else
+          T.cast(comparison_value, T::Boolean) <=> T.cast(other_param.comparison_value, T::Boolean)
         end
       else
         # these are the same (ignoring reason)
@@ -1070,7 +1075,7 @@ module Udb
       .returns(Integer)
       .checked(:never)
     }
-    def hash = @yaml.reject { |k, _| k == "reason" }.hash
+    def hash = @hash ||= @yaml.reject { |k, _| k == "reason" }.hash
 
     sig {
       override
@@ -1112,7 +1117,7 @@ module Udb
       "t#{@id}"
     end
 
-    sig { returns(Z3::BoolExpr) }
+    sig { returns(Z3::BoolExpr).checked(:never) }
     def to_z3
       @z3 ||= Z3.Bool(to_s)
     end
@@ -1248,7 +1253,7 @@ module Udb
 
     attr_accessor :memo
 
-    sig { params(type: LogicNodeType, children: T::Array[ChildType]).void }
+    sig { params(type: LogicNodeType, children: T::Array[ChildType]).void.checked(:never) }
     def initialize(type, children)
       if [LogicNodeType::Term, LogicNodeType::Not].include?(type) && children.size != 1
         raise ArgumentError, "Children must be singular"
@@ -1288,7 +1293,7 @@ module Udb
     end
 
     # @api private
-    sig { returns(T::Array[LogicNode]) }
+    sig { returns(T::Array[LogicNode]).checked(:never) }
     def node_children
       @node_children
     end
@@ -1339,37 +1344,47 @@ module Udb
     end
 
     # @return The unique terms (leafs) of this tree
-    sig { returns(T::Array[TermType]) }
+    sig { returns(T::Array[TermType]).checked(:never) }
     def terms
-      @memo.terms ||=
-        begin
-          t = literals.uniq
-          raise "Problem with parameter hashing\n#{t.map(&:to_s).uniq}\n#{t.map(&:to_s)}" unless t.map(&:to_s).uniq == t.map(&:to_s)
-          t
-        end
+      @memo.terms ||= literals
     end
 
     # @return The unique terms (leafs) of this tree, exculding antecendents of an IF
-    sig { returns(T::Array[TermType]) }
+    sig { returns(T::Array[TermType]).checked(:never) }
     def terms_no_antecendents
       if @type == LogicNodeType::If
         node_children.fetch(1).terms_no_antecendents
       elsif @type == LogicNodeType::Term
         [T.cast(@children.fetch(0), TermType)]
       else
-        node_children.map { |child| child.terms_no_antecendents }.flatten.uniq
+        seen = {}
+        node_children.each_with_object([]) do |child, result|
+          child.terms_no_antecendents.each do |t|
+            unless seen.key?(t)
+              seen[t] = true
+              result << t
+            end
+          end
+        end
       end
     end
 
-    # @return all literals in the tree
-    # unlike #terms, this list will include leaves that are equivalent
-    sig { returns(T::Array[TermType]) }
+    # @return all unique literals (leafs) in the tree
+    sig { returns(T::Array[TermType]).checked(:never) }
     def literals
       @memo.literals ||=
       if @type == LogicNodeType::Term
         [@children.fetch(0)]
       else
-        node_children.map { |child| child.literals }.flatten
+        seen = {}
+        node_children.each_with_object([]) do |child, result|
+          child.literals.each do |t|
+            unless seen.key?(t)
+              seen[t] = true
+              result << t
+            end
+          end
+        end
       end
     end
 
@@ -1673,6 +1688,27 @@ module Udb
         )
       else
         T.absurd(@type)
+      end
+    end
+
+    sig { params(eval_cb: EvalCallbackType).returns(T::Array[LogicNode]) }
+    def failing_conjuncts(eval_cb)
+      if @type == LogicNodeType::And
+        # Evaluate each original child independently to find failing conjuncts
+        child_replace_cb = LogicNode.make_replace_cb do |tn|
+          r = eval_cb.call(T.cast(tn.children.fetch(0), TermType))
+          case r
+          when SatisfiedResult::Yes   then LogicNode::True
+          when SatisfiedResult::No    then LogicNode::False
+          when SatisfiedResult::Maybe then tn
+          else T.absurd(r)
+          end
+        end
+        node_children.select do |child|
+          child.replace_terms(child_replace_cb).reduce.type == LogicNodeType::False
+        end
+      else
+        [self]
       end
     end
 
@@ -2033,7 +2069,7 @@ module Udb
     end
 
     # convert to a UDB schema
-    sig { params(term_determined: T::Boolean).returns(T.any(T::Boolean, T::Hash[String, T.untyped])) }
+    sig { params(term_determined: T::Boolean).returns(T.any(T::Boolean, T::Hash[String, T.untyped])).checked(:never) }
     def to_h(term_determined = false)
       if @type == LogicNodeType::True
         true
@@ -2683,6 +2719,9 @@ module Udb
           if xor_with_self
             # xor with self if always false
             False
+          elsif reduced.node_children.all? { |c| c.type == LogicNodeType::True || c.type == LogicNodeType::False }
+            # all children are literals: xor is true iff exactly one child is true
+            reduced.node_children.count { |c| c.type == LogicNodeType::True } == 1 ? True : False
           else
             reduced
           end
@@ -2987,7 +3026,7 @@ module Udb
       @memo.is_nested_cnf = ret
     end
 
-    sig { params(cfg_arch: ConfiguredArchitecture, solver: Z3Solver).returns(Z3::BoolExpr) }
+    sig { params(cfg_arch: ConfiguredArchitecture, solver: Z3Solver).returns(Z3::BoolExpr).checked(:never) }
     def to_z3(cfg_arch, solver = Z3Solver.new)
       case @type
       when LogicNodeType::Term
