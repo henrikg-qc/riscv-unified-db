@@ -30,9 +30,9 @@ namespace udb {
       <%- if is_rt_width -%>
       std::print(out, "<%= rf_name %>{}: {:#x}\n", i, static_cast<uint64_t>(_<%= rf_name %>reg(i).get().get_ui()));
       <%- else -%>
-        <%- if rf_width >= 64 -%>
+        <%- if rf_width > 64 -%>
         __int128 val = _<%= rf_name %>reg(i).get();
-        std::print(out, "<%= rf_name %>{}: {:#x}{:#x}\n", i, static_cast<uint64_t>(val >> 64), static_cast<uint64_t>(val & 0xFFFFFFFFFFFFFFFF));
+        std::print(out, "<%= rf_name %>{}: {:#x}{:x}\n", i, static_cast<uint64_t>(val >> 64), static_cast<uint64_t>(val & 0xFFFFFFFFFFFFFFFF));
         <%- else -%>
         std::print(out, "<%= rf_name %>{}: {:#x}\n", i, _<%= rf_name %>reg(i).get());
         <%- end -%>
