@@ -1,5 +1,6 @@
 #pragma once
 #include <cstdint>
+#include <string>
 #include <format>
 
 #include "udb/iss_soc_model.hpp"
@@ -57,14 +58,15 @@ public:
   class Fail : public udb::ExitEvent
   {
   public:
-    Fail(uint64_t testnum) : udb::ExitEvent(-1), m_testnum(testnum) {}
+    Fail(uint64_t testnum) : udb::ExitEvent(-1), m_testnum(testnum), m_what(std::format("Test #{} failed", m_testnum)) {}
 
     const char* what() const noexcept override
     {
-      return std::format("Test #{} failed", m_testnum).c_str();
+      return m_what.c_str();
     }
   private:
     uint64_t m_testnum;
+    std::string m_what;
   };
 
   virtual int HandleCommand(HTIFCOMMAND cmd) override;
