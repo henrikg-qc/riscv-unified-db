@@ -1,6 +1,6 @@
 #pragma once
 #include <cstdint>
-#include <fmt/core.h>
+#include <format>
 
 #include "udb/iss_soc_model.hpp"
 
@@ -61,7 +61,7 @@ public:
 
     const char* what() const noexcept override
     {
-      return strdup(fmt::format("Test #{} failed", m_testnum).c_str());
+      return std::format("Test #{} failed", m_testnum).c_str();
     }
   private:
     uint64_t m_testnum;
