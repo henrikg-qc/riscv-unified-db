@@ -945,12 +945,116 @@ function xlen {
   }
 }
 
+enum Endian {
+  Little  0
+  Big     1
+}
+
+function endianness {
+  returns Endian
+  description {
+    Returns the effective endianness for the current privilege mode.
+  }
+  body {
+    if (mode() == PrivilegeMode::M) {
+      if (M_MODE_ENDIANNESS == "little") {
+        return Endian::Little;
+      } else if (M_MODE_ENDIANNESS == "big") {
+        return Endian::Big;
+      } else if (M_MODE_ENDIANNESS == "dynamic") {
+        if (CSR[mstatus].MBE == 1'b1) {
+          return Endian::Big;
+        } else {
+          return Endian::Little;
+        }
+      } else {
+        assert(false, "Invalid M_MODE_ENDIANNESS value");
+        unreachable();
+      }
+    } else if (implemented?(ExtensionName::S) && mode() == PrivilegeMode::S) {
+      if (S_MODE_ENDIANNESS == "little") {
+        return Endian::Little;
+      } else if (S_MODE_ENDIANNESS == "big") {
+        return Endian::Big;
+      } else if (S_MODE_ENDIANNESS == "dynamic") {
+        if (CSR[mstatus].SBE == 1'b1) {
+          return Endian::Big;
+        } else {
+          return Endian::Little;
+        }
+      } else {
+        assert(false, "Invalid S_MODE_ENDIANNESS value");
+        unreachable();
+      }
+    } else if (implemented?(ExtensionName::U) && mode() == PrivilegeMode::U) {
+      if (U_MODE_ENDIANNESS == "little") {
+        return Endian::Little;
+      } else if (U_MODE_ENDIANNESS == "big") {
+        return Endian::Big;
+      } else if (U_MODE_ENDIANNESS == "dynamic") {
+        if (CSR[mstatus].UBE == 1'b1) {
+          return Endian::Big;
+        } else {
+          return Endian::Little;
+        }
+      } else {
+        assert(false, "Invalid U_MODE_ENDIANNESS value");
+        unreachable();
+      }
+    } else if (implemented?(ExtensionName::H)) {
+      if (mode() == PrivilegeMode::VS) {
+        if (VS_MODE_ENDIANNESS == "little") {
+          return Endian::Little;
+        } else if( VS_MODE_ENDIANNESS == "big") {
+          return Endian::Big;
+        } else if (VS_MODE_ENDIANNESS == "dynamic") {
+          if(CSR[hstatus].VSBE == 1'b1) {
+            return Endian::Big;
+          } else {
+            return Endian::Little;
+          }
+        }
+        else {
+          assert(false, "Invalid VS_MODE_ENDIANNESS value");
+          unreachable();
+        }
+      } else if (mode() == PrivilegeMode::VU) {
+        if (VU_MODE_ENDIANNESS == "little") {
+          return Endian::Little;
+        } else if( VU_MODE_ENDIANNESS == "big") {
+          return Endian::Big;
+        } else if (VU_MODE_ENDIANNESS == "dynamic") {
+          if(CSR[vsstatus].UBE == 1'b1) {
+            return Endian::Big;
+          } else {
+            return Endian::Little;
+          }
+        }
+        else {
+          assert(false, "Invalid VS_MODE_ENDIANNESS value");
+          unreachable();
+        }
+      } else {
+        assert(false, "Invalid configuration value");
+        unreachable();
+      }
+    } else {
+      assert(false, "Invalid configuration value");
+      unreachable();
+    }
+  }
+}
+
 function virtual_mode? {
   returns Boolean
   description {
     Returns True if the current mode is virtual (VS or VU).
   }
   body {
+    if(endianness() == Endian::Big) {
+     return false;
+    }
+
     return (mode() == PrivilegeMode::VS) || (mode() == PrivilegeMode::VU);
   }
 }
