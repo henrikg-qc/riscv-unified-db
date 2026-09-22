@@ -953,95 +953,65 @@ enum Endian {
 function endianness {
   returns Endian
   description {
-    Returns the effective endianness for the current privilege mode.
+    Returns the endianness for the effective privilege mode.
   }
   body {
-    if (mode() == PrivilegeMode::M) {
-      if (M_MODE_ENDIANNESS == "little") {
-        return Endian::Little;
-      } else if (M_MODE_ENDIANNESS == "big") {
+    if (effective_ldst_mode() == PrivilegeMode::M) {
+      if (CSR[mstatus].MBE == 1'b1) {
         return Endian::Big;
-      } else if (M_MODE_ENDIANNESS == "dynamic") {
-        if (CSR[mstatus].MBE == 1'b1) {
-          return Endian::Big;
-        } else {
-          return Endian::Little;
-        }
       } else {
-        assert(false, "Invalid M_MODE_ENDIANNESS value");
-        unreachable();
+        return Endian::Little;
       }
-    } else if (implemented?(ExtensionName::S) && mode() == PrivilegeMode::S) {
-      if (S_MODE_ENDIANNESS == "little") {
-        return Endian::Little;
-      } else if (S_MODE_ENDIANNESS == "big") {
+    } else if (implemented?(ExtensionName::S) && effective_ldst_mode() == PrivilegeMode::S) {
+      if (CSR[mstatus].SBE == 1'b1) {
         return Endian::Big;
-      } else if (S_MODE_ENDIANNESS == "dynamic") {
-        if (CSR[mstatus].SBE == 1'b1) {
-          return Endian::Big;
-        } else {
-          return Endian::Little;
-        }
       } else {
-        assert(false, "Invalid S_MODE_ENDIANNESS value");
-        unreachable();
+        return Endian::Little;
       }
-    } else if (implemented?(ExtensionName::U) && mode() == PrivilegeMode::U) {
-      if (U_MODE_ENDIANNESS == "little") {
-        return Endian::Little;
-      } else if (U_MODE_ENDIANNESS == "big") {
+    } else if (implemented?(ExtensionName::U) && effective_ldst_mode() == PrivilegeMode::U) {
+      if (CSR[mstatus].UBE == 1'b1) {
         return Endian::Big;
-      } else if (U_MODE_ENDIANNESS == "dynamic") {
-        if (CSR[mstatus].UBE == 1'b1) {
-          return Endian::Big;
-        } else {
-          return Endian::Little;
-        }
       } else {
-        assert(false, "Invalid U_MODE_ENDIANNESS value");
-        unreachable();
+        return Endian::Little;
       }
     } else if (implemented?(ExtensionName::H)) {
-      if (mode() == PrivilegeMode::VS) {
-        if (VS_MODE_ENDIANNESS == "little") {
-          return Endian::Little;
-        } else if( VS_MODE_ENDIANNESS == "big") {
+      if (effective_ldst_mode() == PrivilegeMode::VS) {
+        if(CSR[hstatus].VSBE == 1'b1) {
           return Endian::Big;
-        } else if (VS_MODE_ENDIANNESS == "dynamic") {
-          if(CSR[hstatus].VSBE == 1'b1) {
-            return Endian::Big;
-          } else {
-            return Endian::Little;
-          }
-        }
-        else {
-          assert(false, "Invalid VS_MODE_ENDIANNESS value");
-          unreachable();
-        }
-      } else if (mode() == PrivilegeMode::VU) {
-        if (VU_MODE_ENDIANNESS == "little") {
+        } else {
           return Endian::Little;
-        } else if( VU_MODE_ENDIANNESS == "big") {
-          return Endian::Big;
-        } else if (VU_MODE_ENDIANNESS == "dynamic") {
-          if(CSR[vsstatus].UBE == 1'b1) {
-            return Endian::Big;
-          } else {
-            return Endian::Little;
-          }
         }
-        else {
-          assert(false, "Invalid VS_MODE_ENDIANNESS value");
-          unreachable();
+      } else if (effective_ldst_mode() == PrivilegeMode::VU) {
+        if(CSR[vsstatus].UBE == 1'b1) {
+          return Endian::Big;
+        } else {
+          return Endian::Little;
         }
       } else {
-        assert(false, "Invalid configuration value");
         unreachable();
       }
     } else {
-      assert(false, "Invalid configuration value");
       unreachable();
     }
+  }
+}
+
+function byte_swap {
+  returns XReg
+  arguments
+    U32 LEN,
+    XReg value
+  description {
+    Swaps bytes in register based on LEN.
+  }
+  body {
+    XReg result;
+
+    result = 0;
+    for (U32 i=0; i < LEN; i = i+8) {
+      result[(i+7):i] = value[(LEN-1-i):(LEN-8-i)];
+    }
+    return result;
   }
 }
 
@@ -1051,10 +1021,6 @@ function virtual_mode? {
     Returns True if the current mode is virtual (VS or VU).
   }
   body {
-    if(endianness() == Endian::Big) {
-     return false;
-    }
-
     return (mode() == PrivilegeMode::VS) || (mode() == PrivilegeMode::VU);
   }
 }
@@ -2736,12 +2702,7 @@ function read_memory {
     if (aligned) {
       result =  read_memory_aligned(LEN, virtual_address, encoding, 1'b0, 1'b0);
       if(LEN > 8 && endianness() == Endian::Big ) {
-        U32 tmp;
-        for (U32 i=0; i < LEN/2; i = i+8) {
-          tmp = result[(i+7):i];
-          result[(i+7):i] = result[(LEN-1-i):(LEN-8-i)];
-          result[(LEN-1-i):(LEN-8-i)] = tmp[7:0];
-        }
+        result = byte_swap(LEN, result);
       }
       return result;
     }
