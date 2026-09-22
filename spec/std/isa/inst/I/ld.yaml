@@ -55,7 +55,7 @@ operation(): |
 
   if (xlen() == 32) {
     if (implemented?(ExtensionName::Zilsd)) {
-      if (endianess() == Endian::Big) {
+      if (endianness() == Endian::Big) {
         X[xd+1] = read_memory(32, virtual_address, $encoding);
         X[xd] = read_memory(32, virtual_address + 4, $encoding);
       } else {
