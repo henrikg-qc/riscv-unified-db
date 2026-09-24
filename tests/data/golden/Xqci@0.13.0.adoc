@@ -40509,7 +40509,12 @@ XReg result;
 if pass:[(]aligned) {
   result = xref:#udb-function-read_memory_aligned[read_memory_aligned]pass:[(]LEN, virtual_address, encoding, 1'b0, 1'b0);
   if pass:[(]LEN > 8 && xref:#udb-function-endianness[endianness]pass:[(]) == Endian::Big) {
-    result = xref:#udb-function-byte_swap[byte_swap]pass:[(]LEN, result);
+    U32 tmp;
+    for pass:[(]U32 i = 0; i < LEN / 2; i = i pass:[+] 8) {
+      tmp = result[(i pass:[+] 7):i];
+      result[(i pass:[+] 7):i] = result[(LEN - 1 - i):(LEN - 8 - i)];
+      result[(LEN - 1 - i):(LEN - 8 - i)] = tmp[7:0];
+    }
   }
   return result;
 }
